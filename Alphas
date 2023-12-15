@@ -1,0 +1,134 @@
+import numpy as np
+import matplotlib.pyplot as plt
+
+# type 1
+lam_1 = 16.47826  # arrivals per day ~Poisson (inter-arrival ~Exp(9/lam))
+scan_mean_1 = 0.432  # scan duration ~N
+scan_sd_1 = 0.0974
+
+n_slot_1 = 18
+
+n_days = 1000
+
+
+# generates list of type 1 patients and assigns randomly drawn scan duration as attribute of patient
+def gen_one(lam, mean, sd):
+    day = 0
+    time = 8
+    patients = []
+
+    while day < n_days:
+        arr_time = time + 9 * np.random.exponential(1 / lam)
+        if arr_time > 17:
+            day += 1
+            arr_time -= 9
+        scan_dur = np.random.normal(mean, sd)
+        time = arr_time
+        patients.append([day, time, scan_dur])  # save day + time of call. scan_dur as attribute
+    patients = np.array(patients)
+    patients = patients[:-1]  # last patients calls at day = n_days + 1
+    return patients
+
+
+# schedule: returns list of day, time, patient index
+def schedule(patients, n_slot, alpha):
+    schedule = []
+    sch_day = 1
+    slot = 0
+
+    slot_length = {}
+    cumsum = {}
+    for i in range(n_slot):
+        slot_length[i] = (1 + (i - 8.5) * alpha) * 0.5
+        if i == 0:
+            cumsum[i] = 0
+        else:
+            cumsum[i] = cumsum[i - 1] + slot_length[i - 1]
+
+    for pat in patients:
+        if pat[0] == sch_day or slot == n_slot:  # go to next day if no more available slots
+            sch_day += 1
+            slot = 0
+        patient_slot = [sch_day, 8 + cumsum[slot]]  # save day, time of start of slot
+        slot += 1
+        schedule.append(patient_slot)
+    schedule = np.array(schedule)
+    return schedule
+
+def perf_eval(schedule, patients):
+    lateness = []
+    overtime = []
+    idletime = []
+    scan_sum = 0
+    time = 8
+
+    for i in range(len(schedule)):
+        lateness.append(max(0, time - schedule[i][1]))  # if early, lateness = 0
+        scan_sum += patients[i][2]
+        time = max(time, schedule[i][1]) + patients[i][2]
+
+        if i == len(schedule) - 1:
+            break
+        if (schedule[i + 1][1] == 8):  # new day
+            overtime.append(max(0, time - 17))  # overtime if time after last finish > 17
+            idletime.append(max(0, 9 - scan_sum + overtime[
+                -1]))  # idle time on day = length of day (incl. overtime) - sum of scan durations
+            scan_sum = 0
+            time = 8
+
+    return lateness, overtime, idletime
+
+def simulate_and_plot():
+    alphas = np.linspace(0, 0.05, 100)
+
+    lateness_results = []
+    max_lateness_results = []
+    days_wait_results = []
+    max_days_wait_results = []
+    overtime_results = []
+    idletime_results = []
+
+    for alpha in alphas:
+        pat_1 = gen_one(lam_1, scan_mean_1, scan_sd_1)
+        sch_1 = schedule(pat_1, n_slot_1, alpha)
+        lateness_t1, overtime_t1, idletime_t1 = perf_eval(sch_1, pat_1)
+
+        lateness_results.append(np.mean(lateness_t1)* 60)
+        max_lateness_results.append(np.max(lateness_t1)* 60)
+        days_wait_results.append(np.mean([int(sch_day - call_day) for sch_day, call_day in zip(sch_1[:, 0], pat_1[:, 0])]))
+        max_days_wait_results.append(np.max([int(sch_day - call_day) for sch_day, call_day in zip(sch_1[:, 0], pat_1[:, 0])]))
+        overtime_results.append(np.mean(overtime_t1)* 60)
+        idletime_results.append(np.mean(idletime_t1))
+
+    # Plotting
+    plt.figure(figsize=(18, 10))
+
+    plt.subplot(1, 2, 1)
+    plt.plot(alphas, lateness_results)
+    plt.title('Average Lateness vs Alpha', fontsize=18)  # Adjust the title font size
+    plt.xlabel('Beta', fontsize=16)  # Adjust the x-axis label font size
+    plt.ylabel('Average Lateness (minutes)', fontsize=16)  # Adjust the y-axis label font size
+    plt.tick_params(axis='both', labelsize=14)  # Adjust the tick label font size
+
+    plt.subplot(1, 2, 2)
+    plt.plot(alphas, overtime_results)
+    plt.title('Average Overtime vs Alpha', fontsize=18)
+    plt.xlabel('Beta', fontsize=16)
+    plt.ylabel('Average Overtime (minutes)', fontsize=16)
+    plt.tick_params(axis='both', labelsize=14)
+
+    plt.tight_layout()
+    plt.show()
+
+    return {
+        'alphas': alphas,
+        'lateness': lateness_results,
+        'max_lateness': max_lateness_results,
+        'days_wait': days_wait_results,
+        'max_days_wait': max_days_wait_results,
+        'overtime': overtime_results,
+        'idletime': idletime_results
+    }
+
+
+results = simulate_and_plot()
